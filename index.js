@@ -148,8 +148,85 @@ app.post("/webhook", async (req, res) => {
         // Clear session after order completion
         await sessionService.deleteSession(from);
       } else if (text === "status") {
-        reply =
-          "🔎 Checking your order status... (this will connect to DB later)";
+        // Fetch customer's active orders from database (excluding completed ones)
+        try {
+          const { data: orders, error } = await supabase
+            .from("orders")
+            .select(
+              `
+              *,
+              order_items (
+                quantity,
+                price,
+                products (
+                  name
+                )
+              )
+            `
+            )
+            .eq("customer_phone", from)
+            .neq("status", "completed")
+            .order("created_at", { ascending: false });
+
+          if (error) {
+            console.error("❌ Error fetching orders:", error.message);
+            reply = "❌ Sorry, I couldn't check your order status right now.";
+          } else if (orders.length === 0) {
+            reply =
+              "📦 You don't have any active orders. All your orders are completed! Send me items like '2 apples, 1 milk' to place a new order!";
+          } else {
+            // Format order status information for active orders only
+            const orderStatusMessages = orders.map((order) => {
+              const statusEmoji = {
+                pending: "⏳",
+                in_progress: "🔄",
+                delivered: "🚚",
+              };
+
+              const statusText = {
+                pending: "Pending",
+                in_progress: "In Progress",
+                delivered: "Delivered",
+              };
+
+              // Progress indicators
+              const photoStatus = order.photo_captured
+                ? "✅ Photo captured"
+                : "📸 Photo pending";
+              const signatureStatus = order.signature_captured
+                ? "✅ Signature captured"
+                : "✍️ Signature pending";
+              const kycStatus = order.kyc_completed
+                ? "✅ KYC completed"
+                : "📋 KYC pending";
+
+              // Format order items (accessing product name through foreign key relationship)
+              const itemsList = order.order_items
+                .map(
+                  (item) =>
+                    `• ${item.quantity}x ${item.products.name} - ₹${
+                      item.price * item.quantity
+                    }`
+                )
+                .join("\n");
+
+              return `📋 Order #${order.id}\n${
+                statusEmoji[order.status]
+              } Status: ${statusText[order.status]}\n💰 Total: ₹${
+                order.total_amount
+              }\n📅 Placed: ${new Date(
+                order.created_at
+              ).toLocaleDateString()}\n\n🛒 Items:\n${itemsList}\n\n📊 Progress:\n${photoStatus}\n${signatureStatus}\n${kycStatus}`;
+            });
+
+            reply = `🔍 Your Active Orders:\n\n${orderStatusMessages.join(
+              "\n\n---\n\n"
+            )}`;
+          }
+        } catch (statusError) {
+          console.error("Status check error:", statusError);
+          reply = "❌ Sorry, there was an error checking your order status.";
+        }
       } else if (text === "products") {
         // Fetch products from Supabase
         const { data: products, error } = await supabase
