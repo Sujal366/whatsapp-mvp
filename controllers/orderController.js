@@ -1,5 +1,6 @@
 import supabase from "../supabaseClient.js";
 import hubspotService from "../services/hubspotService.js";
+import whatsappNotificationService from "../services/whatsappNotificationService.js";
 
 // In-memory state for agent actions (until database columns are added)
 const orderActionState = new Map();
@@ -24,7 +25,25 @@ function updateAgentAction(orderId, action, value) {
   return actions;
 }
 
-// Calculate order status based on completed agent actions
+// Calculate order status based on completed agent actions from database
+function calculateOrderStatusFromDatabase(orderData) {
+  const { photo_captured, signature_captured, kyc_completed } = orderData;
+  
+  // Count completed actions from database flags
+  const completedActions = [photo_captured, signature_captured, kyc_completed].filter(Boolean).length;
+  
+  if (completedActions === 0) {
+    return "pending"; // No agent actions completed
+  } else if (completedActions === 3) {
+    return "completed"; // All agent actions done
+  } else if (photo_captured && signature_captured) {
+    return "delivered"; // Delivery confirmed (photo + signature)
+  } else {
+    return "in_progress"; // Some actions started but not delivered yet
+  }
+}
+
+// Legacy function for in-memory calculation (kept for compatibility)
 function calculateOrderStatus(order) {
   const { photo_captured, signature_captured, kyc_completed } = order;
   
@@ -113,7 +132,7 @@ const createOrder = async (req, res) => {
       userId = 2; // WhatsApp Bot User
     }
 
-    // Insert order
+    // Insert order with customer information
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert([
@@ -121,6 +140,8 @@ const createOrder = async (req, res) => {
           user_id: userId,
           total_amount: total,
           status: "pending",
+          customer_phone: customerPhone,
+          customer_name: customerName,
         },
       ])
       .select()
@@ -346,18 +367,38 @@ const saveDeliveryPhoto = async (req, res) => {
     // Save photo data to database (now with proper columns!)
     console.log(`📸 Photo saved for order ${orderId}`);
 
-    // Update agent actions and calculate new order status
-    const updatedActions = updateAgentAction(orderId, 'photo_captured', true);
-    const newStatus = calculateOrderStatus(updatedActions);
+    // Get order details first to retrieve customer phone and current flags
+    const { data: orderData, error: orderFetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
 
-    // Update the order status AND photo completion in the database
+    if (orderFetchError) {
+      console.error('Failed to fetch order for notifications:', orderFetchError);
+    }
+
+    // Update agent actions and calculate new order status using database values
+    const updatedActions = updateAgentAction(orderId, 'photo_captured', true);
+    
+    // Update the order with photo completion in the database
+    const updateData = { 
+      photo_captured: true,
+      photo_captured_at: new Date().toISOString()
+    };
+    
+    // Calculate new status based on current database state + this new action
+    const currentStatus = {
+      photo_captured: true, // This action we're completing
+      signature_captured: orderData?.signature_captured || false,
+      kyc_completed: orderData?.kyc_completed || false
+    };
+    const newStatus = calculateOrderStatusFromDatabase(currentStatus);
+    updateData.status = newStatus;
+
     const { error: updateError } = await supabase
       .from('orders')
-      .update({ 
-        status: newStatus,
-        photo_captured: true,
-        photo_captured_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', orderId);
 
     if (updateError) {
@@ -365,6 +406,25 @@ const saveDeliveryPhoto = async (req, res) => {
       // Continue anyway, don't fail the request
     } else {
       console.log(`✅ Order ${orderId}: status=${newStatus}, photo_captured=true`);
+    }
+
+    // 📱 Send WhatsApp notification to customer
+    try {
+      // Use customer_phone from order, or fallback to test number for existing orders
+      const customerPhone = orderData?.customer_phone || '+918355954296';
+      
+      if (customerPhone) {
+        await whatsappNotificationService.notifyPhotoCapture(
+          customerPhone,
+          orderId
+        );
+        console.log(`📱 Photo capture notification sent to ${customerPhone}`);
+      } else {
+        console.log('⚠️ No customer phone found for photo notification');
+      }
+    } catch (notificationError) {
+      console.error('Failed to send photo notification:', notificationError);
+      // Don't fail the main request for notification failures
     }
 
     // Return success response with updated data
@@ -398,19 +458,39 @@ const saveCustomerSignature = async (req, res) => {
     // Save signature data to database (now with proper columns!)
     console.log(`✍️ Signature saved for order ${orderId} by ${customerName}`);
 
-    // Update agent actions and calculate new order status
-    const updatedActions = updateAgentAction(orderId, 'signature_captured', true);
-    const newStatus = calculateOrderStatus(updatedActions);
+    // Get order details first to retrieve customer phone and current flags
+    const { data: orderData, error: orderFetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
 
-    // Update the order status AND signature completion in the database
+    if (orderFetchError) {
+      console.error('Failed to fetch order for notifications:', orderFetchError);
+    }
+
+    // Update agent actions and calculate new order status using database values
+    const updatedActions = updateAgentAction(orderId, 'signature_captured', true);
+    
+    // Update the order with signature completion in the database
+    const updateData = { 
+      signature_captured: true,
+      signature_captured_at: new Date().toISOString(),
+      customer_name: customerName
+    };
+    
+    // Calculate new status based on current database state + this new action
+    const currentStatus = {
+      photo_captured: orderData?.photo_captured || false,
+      signature_captured: true, // This action we're completing
+      kyc_completed: orderData?.kyc_completed || false
+    };
+    const newStatus = calculateOrderStatusFromDatabase(currentStatus);
+    updateData.status = newStatus;
+
     const { error: updateError } = await supabase
       .from('orders')
-      .update({ 
-        status: newStatus,
-        signature_captured: true,
-        signature_captured_at: new Date().toISOString(),
-        customer_name: customerName
-      })
+      .update(updateData)
       .eq('id', orderId);
 
     if (updateError) {
@@ -418,6 +498,26 @@ const saveCustomerSignature = async (req, res) => {
       // Continue anyway, don't fail the request
     } else {
       console.log(`✅ Order ${orderId}: status=${newStatus}, signature_captured=true`);
+    }
+
+    // 📱 Send WhatsApp notification to customer
+    try {
+      // Use customer_phone from order, or fallback to test number for existing orders
+      const customerPhone = orderData?.customer_phone || '+918355954296';
+      
+      if (customerPhone) {
+        await whatsappNotificationService.notifyDeliveryComplete(
+          customerPhone,
+          orderId,
+          customerName
+        );
+        console.log(`📱 Delivery complete notification sent to ${customerPhone}`);
+      } else {
+        console.log('⚠️ No customer phone found for delivery notification');
+      }
+    } catch (notificationError) {
+      console.error('Failed to send delivery notification:', notificationError);
+      // Don't fail the main request for notification failures
     }
 
     res.json({
@@ -451,19 +551,40 @@ const saveKYCData = async (req, res) => {
     // Save KYC data to database (now with proper columns!)
     console.log(`👤 KYC completed for order ${orderId} - ${kycData.fullName}`);
 
-    // Update agent actions and calculate new order status
-    const updatedActions = updateAgentAction(orderId, 'kyc_completed', true);
-    const newStatus = calculateOrderStatus(updatedActions);
+    // Get order details first to retrieve customer phone
+    const { data: orderData, error: orderFetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
 
-    // Update the order status AND KYC completion in the database
+    if (orderFetchError) {
+      console.error('Failed to fetch order for notifications:', orderFetchError);
+    }
+
+    // Update agent actions and calculate new order status using database values
+    const updatedActions = updateAgentAction(orderId, 'kyc_completed', true);
+    
+    // Update the order with KYC completion in the database
+    const updateData = { 
+      kyc_completed: true,
+      kyc_completed_at: new Date().toISOString(),
+      kyc_data: kycData
+    };
+    
+    // Calculate new status based on current database state + this new action
+    const currentStatus = {
+      photo_captured: orderData?.photo_captured || false,
+      signature_captured: orderData?.signature_captured || false,
+      kyc_completed: true // This action we're completing
+    };
+    const newStatus = calculateOrderStatusFromDatabase(currentStatus);
+    updateData.status = newStatus;
+
+    // Update the order with KYC completion in the database
     const { error: updateError } = await supabase
       .from('orders')
-      .update({ 
-        status: newStatus,
-        kyc_completed: true,
-        kyc_completed_at: new Date().toISOString(),
-        kyc_data: kycData
-      })
+      .update(updateData)
       .eq('id', orderId);
 
     if (updateError) {
@@ -471,6 +592,26 @@ const saveKYCData = async (req, res) => {
       // Continue anyway, don't fail the request
     } else {
       console.log(`✅ Order ${orderId}: status=${newStatus}, kyc_completed=true`);
+    }
+
+    // 📱 Send WhatsApp notification to customer
+    try {
+      // Use customer_phone from order, or fallback to test number for existing orders
+      const customerPhone = orderData?.customer_phone || '+918355954296';
+      
+      if (customerPhone) {
+        await whatsappNotificationService.notifyKYCComplete(
+          customerPhone,
+          orderId,
+          kycData.fullName
+        );
+        console.log(`📱 KYC complete notification sent to ${customerPhone}`);
+      } else {
+        console.log('⚠️ No customer phone found for KYC notification');
+      }
+    } catch (notificationError) {
+      console.error('Failed to send KYC notification:', notificationError);
+      // Don't fail the main request for notification failures
     }
 
     res.json({
