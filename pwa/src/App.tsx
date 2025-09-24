@@ -2,12 +2,12 @@ import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import OrderDetails from "./pages/OrderDetails";
-import CameraCapture from "./pages/CameraCapture";
-import SignaturePad from "./pages/SignaturePad";
-import KYCForm from "./pages/KYCForm";
-import Profile from "./pages/Profile";
+import Dashboard from "./pages/Dashboard.tsx";
+import OrderDetails from "./pages/OrderDetails.tsx";
+import CameraCapture from "./pages/CameraCapture.tsx";
+import SignaturePad from "./pages/SignaturePad.tsx";
+import KYCForm from "./pages/KYCForm.tsx";
+import Profile from "./pages/Profile.tsx";
 import LoadingSpinner from "./components/LoadingSpinner";
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
