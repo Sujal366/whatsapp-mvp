@@ -1,0 +1,38 @@
+write .gitignore file for this project
+# Ignore node_modules directory
+node_modules/
+# Ignore log files
+*.log
+# Ignore environment variable files
+.env
+# Ignore build output
+dist/
+build/
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
+# Ignore IDE specific files
+.vscode/
+.idea/
+# Ignore coverage reports
+coverage/
+# Ignore temporary files
+*.tmp
+*.swp
+# Ignore package lock files
+package-lock.json
+yarn.lock
+# Ignore compiled files
+*.class
+*.obj
+# Ignore test result files
+test-results/
+# Ignore backup files
+*.bak
+# Ignore miscellaneous files
+*.out
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
