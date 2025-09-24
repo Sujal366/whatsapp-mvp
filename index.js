@@ -12,8 +12,8 @@ import sessionService from "./services/redisSessionService.js";
 const app = express();
 app.use(cors());
 // Increase body size limit for image uploads
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
@@ -91,7 +91,10 @@ app.post("/webhook", async (req, res) => {
           state: "awaiting_order_items",
         });
         reply = "📦 Please send your order items like: 2 apples, 1 milk";
-      } else if (userSession?.state === "awaiting_order_items" || looksLikeOrder(text)) {
+      } else if (
+        userSession?.state === "awaiting_order_items" ||
+        looksLikeOrder(text)
+      ) {
         const orderText = text; // user input, e.g., "2 apples, 1 milk"
 
         // Parse items
@@ -201,7 +204,10 @@ async function sendText(to, text) {
 function looksLikeOrder(text) {
   // Check if text contains patterns like "1 apple", "2 milk", etc.
   const orderPattern = /\d+\s+\w+/;
-  return orderPattern.test(text) && (text.includes(',') || text.split(' ').length <= 4);
+  return (
+    orderPattern.test(text) &&
+    (text.includes(",") || text.split(" ").length <= 4)
+  );
 }
 
 function parseOrderText(text) {
