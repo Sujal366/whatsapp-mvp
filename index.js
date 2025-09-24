@@ -91,7 +91,7 @@ app.post("/webhook", async (req, res) => {
           state: "awaiting_order_items",
         });
         reply = "📦 Please send your order items like: 2 apples, 1 milk";
-      } else if (userSession?.state === "awaiting_order_items") {
+      } else if (userSession?.state === "awaiting_order_items" || looksLikeOrder(text)) {
         const orderText = text; // user input, e.g., "2 apples, 1 milk"
 
         // Parse items
@@ -195,6 +195,13 @@ async function sendText(to, text) {
   });
   const j = await r.json();
   console.log("Send API response:", j);
+}
+
+// Function to detect if text looks like an order
+function looksLikeOrder(text) {
+  // Check if text contains patterns like "1 apple", "2 milk", etc.
+  const orderPattern = /\d+\s+\w+/;
+  return orderPattern.test(text) && (text.includes(',') || text.split(' ').length <= 4);
 }
 
 function parseOrderText(text) {
