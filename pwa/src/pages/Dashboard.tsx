@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { ordersAPI } from "../services/api";
+import { ordersAPI, ensureAuthenticated } from "../services/api";
 
 interface Order {
   id: number;
@@ -32,10 +32,12 @@ const Dashboard: React.FC = () => {
   const loadOrders = async () => {
     try {
       setIsLoading(true);
+      // Ensure agent is authenticated before fetching orders
+      await ensureAuthenticated();
       const data = await ordersAPI.getAllOrders();
       setOrders(data);
 
-      // Calculate stats
+      // Calculate stats - combine delivered and completed into one "completed" category
       const stats = data.reduce(
         (acc: any, order: Order) => {
           acc.total++;
@@ -47,8 +49,8 @@ const Dashboard: React.FC = () => {
             case "processing":
               acc.inProgress++;
               break;
-            case "completed":
             case "delivered":
+            case "completed":
               acc.completed++;
               break;
           }
@@ -72,9 +74,10 @@ const Dashboard: React.FC = () => {
       case "in_progress":
       case "processing":
         return "bg-blue-100 text-blue-800";
-      case "completed":
       case "delivered":
         return "bg-green-100 text-green-800";
+      case "completed":
+        return "bg-emerald-100 text-emerald-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -139,7 +142,7 @@ const Dashboard: React.FC = () => {
       </header>
 
       {/* Stats Cards */}
-      <div className="px-4 py-6">
+      <div className="px-4 py-6">        
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg p-4 shadow-sm">
             <div className="text-2xl font-bold text-gray-900">

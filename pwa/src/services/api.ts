@@ -65,4 +65,40 @@ export const productsAPI = {
   },
 };
 
+// Auto-authentication for agent
+export const ensureAuthenticated = async () => {
+  const existingToken = localStorage.getItem("authToken");
+  
+  // Check if token exists and is not expired
+  if (existingToken) {
+    try {
+      const payload = JSON.parse(atob(existingToken.split('.')[1]));
+      const currentTime = Date.now() / 1000;
+      
+      // If token is not expired (with 5 minute buffer), use it
+      if (payload.exp > currentTime + 300) {
+        return existingToken;
+      }
+    } catch (error) {
+      console.warn("Invalid existing token, will re-authenticate");
+    }
+  }
+
+  // Get new token
+  try {
+    const response = await apiClient.post("/auth/login", {
+      username: "agent",
+      password: "password"
+    });
+    
+    const { token } = response.data;
+    localStorage.setItem("authToken", token);
+    console.log("✅ Agent authenticated successfully");
+    return token;
+  } catch (error) {
+    console.error("❌ Agent authentication failed:", error);
+    throw new Error("Failed to authenticate agent");
+  }
+};
+
 export default apiClient;

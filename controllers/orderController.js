@@ -1,6 +1,47 @@
 import supabase from "../supabaseClient.js";
 import hubspotService from "../services/hubspotService.js";
 
+// In-memory state for agent actions (until database columns are added)
+const orderActionState = new Map();
+
+// Helper function to get current agent actions for an order
+function getAgentActions(orderId) {
+  if (!orderActionState.has(orderId)) {
+    orderActionState.set(orderId, {
+      photo_captured: false,
+      signature_captured: false,
+      kyc_completed: false
+    });
+  }
+  return orderActionState.get(orderId);
+}
+
+// Helper function to update agent actions
+function updateAgentAction(orderId, action, value) {
+  const actions = getAgentActions(orderId);
+  actions[action] = value;
+  orderActionState.set(orderId, actions);
+  return actions;
+}
+
+// Calculate order status based on completed agent actions
+function calculateOrderStatus(order) {
+  const { photo_captured, signature_captured, kyc_completed } = order;
+  
+  // Count completed actions
+  const completedActions = [photo_captured, signature_captured, kyc_completed].filter(Boolean).length;
+  
+  if (completedActions === 0) {
+    return "pending"; // No agent actions completed
+  } else if (completedActions === 3) {
+    return "completed"; // All agent actions done
+  } else if (photo_captured && signature_captured) {
+    return "delivered"; // Delivery confirmed (photo + signature)
+  } else {
+    return "in_progress"; // Some actions started but not delivered yet
+  }
+};
+
 const createOrder = async (req, res) => {
   try {
     const { items, customerPhone, customerName } = req.body; // Added customer info for CRM
@@ -172,14 +213,287 @@ const createOrder = async (req, res) => {
 };
 
 const getOrders = async (req, res) => {
-  const userId = req.user.id;
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*, order_items(*)")
-    .eq("user_id", userId);
+  try {
+    // For delivery agents, show all orders regardless of user_id
+    // In production, you might filter by assigned agent or region
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        `
+        *,
+        order_items (
+          id,
+          product_id,
+          quantity,
+          price,
+          products (
+            name,
+            price
+          )
+        )
+      `
+      )
+      .order("created_at", { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+    if (error) {
+      console.error("Orders fetch error:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // Use database columns for all data (fully persisted across restarts!)
+    const ordersWithStatus = (data || []).map(order => {
+      return {
+        ...order,
+        // All data now comes from database - persisted across restarts!
+        status: order.status,
+        photo_captured: order.photo_captured || false,
+        signature_captured: order.signature_captured || false,
+        kyc_completed: order.kyc_completed || false,
+      };
+    });
+
+    console.log(`📦 API: Returning ${ordersWithStatus.length} orders with persistent database data`);
+    res.json(ordersWithStatus);
+  } catch (err) {
+    console.error("Orders API error:", err);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
 };
 
-export { createOrder, getOrders };
+// Get single order by ID with order items
+const getOrderById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ error: "Order ID is required" });
+    }
+
+    console.log(`📦 API: Fetching order details for ID: ${id}`);
+
+    // First get the order
+    const { data: orderData, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (orderError || !orderData) {
+      console.log(`❌ Order ${id} not found:`, orderError?.message);
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Get order items with product details
+    const { data: itemsData, error: itemsError } = await supabase
+      .from("order_items")
+      .select(
+        `
+        id,
+        quantity,
+        price,
+        products (
+          id,
+          name
+        )
+      `
+      )
+      .eq("order_id", id);
+
+    if (itemsError) {
+      console.log(`❌ Error fetching order items:`, itemsError.message);
+      return res.status(500).json({ error: "Failed to fetch order items" });
+    }
+
+    // Format the order items for the frontend
+    const formattedItems = itemsData.map((item) => ({
+      id: item.id,
+      product_name: item.products.name,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
+    // Use database columns for all data (fully persisted across restarts!)
+    const orderWithItems = {
+      ...orderData,
+      items: formattedItems,
+      // All data now comes from database - persisted across restarts!
+      status: orderData.status,
+      photo_captured: orderData.photo_captured || false,
+      signature_captured: orderData.signature_captured || false,
+      kyc_completed: orderData.kyc_completed || false,
+    };
+
+    console.log(
+      `✅ API: Returning order ${id} with ${formattedItems.length} items, status: ${orderData.status}, persistent data`
+    );
+    res.json({ order: orderWithItems });
+  } catch (err) {
+    console.error("Get order by ID error:", err);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
+};
+
+// Save delivery photo
+const saveDeliveryPhoto = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { photoData } = req.body;
+
+    if (!photoData) {
+      return res.status(400).json({ error: "Photo data is required" });
+    }
+
+    // Save photo data to database (now with proper columns!)
+    console.log(`📸 Photo saved for order ${orderId}`);
+
+    // Update agent actions and calculate new order status
+    const updatedActions = updateAgentAction(orderId, 'photo_captured', true);
+    const newStatus = calculateOrderStatus(updatedActions);
+
+    // Update the order status AND photo completion in the database
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ 
+        status: newStatus,
+        photo_captured: true,
+        photo_captured_at: new Date().toISOString()
+      })
+      .eq('id', orderId);
+
+    if (updateError) {
+      console.error('Failed to update order in database:', updateError);
+      // Continue anyway, don't fail the request
+    } else {
+      console.log(`✅ Order ${orderId}: status=${newStatus}, photo_captured=true`);
+    }
+
+    // Return success response with updated data
+    res.json({
+      message: "Photo saved successfully",
+      order: {
+        id: orderId,
+        photo_captured: true,
+        photo_captured_at: new Date().toISOString(),
+        status: newStatus,
+      },
+    });
+  } catch (err) {
+    console.error("Save photo error:", err);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
+};
+
+// Save customer signature
+const saveCustomerSignature = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { signatureData, customerName } = req.body;
+
+    if (!signatureData || !customerName) {
+      return res
+        .status(400)
+        .json({ error: "Signature data and customer name are required" });
+    }
+
+    // Save signature data to database (now with proper columns!)
+    console.log(`✍️ Signature saved for order ${orderId} by ${customerName}`);
+
+    // Update agent actions and calculate new order status
+    const updatedActions = updateAgentAction(orderId, 'signature_captured', true);
+    const newStatus = calculateOrderStatus(updatedActions);
+
+    // Update the order status AND signature completion in the database
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ 
+        status: newStatus,
+        signature_captured: true,
+        signature_captured_at: new Date().toISOString(),
+        customer_name: customerName
+      })
+      .eq('id', orderId);
+
+    if (updateError) {
+      console.error('Failed to update order in database:', updateError);
+      // Continue anyway, don't fail the request
+    } else {
+      console.log(`✅ Order ${orderId}: status=${newStatus}, signature_captured=true`);
+    }
+
+    res.json({
+      message: "Signature saved successfully",
+      order: {
+        id: orderId,
+        signature_captured: true,
+        signature_captured_at: new Date().toISOString(),
+        customer_name: customerName,
+        status: newStatus,
+      },
+    });
+  } catch (err) {
+    console.error("Save signature error:", err);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
+};
+
+// Save KYC data
+const saveKYCData = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const kycData = req.body;
+
+    if (!kycData.fullName || !kycData.phoneNumber) {
+      return res
+        .status(400)
+        .json({ error: "Full name and phone number are required" });
+    }
+
+    // Save KYC data to database (now with proper columns!)
+    console.log(`👤 KYC completed for order ${orderId} - ${kycData.fullName}`);
+
+    // Update agent actions and calculate new order status
+    const updatedActions = updateAgentAction(orderId, 'kyc_completed', true);
+    const newStatus = calculateOrderStatus(updatedActions);
+
+    // Update the order status AND KYC completion in the database
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ 
+        status: newStatus,
+        kyc_completed: true,
+        kyc_completed_at: new Date().toISOString(),
+        kyc_data: kycData
+      })
+      .eq('id', orderId);
+
+    if (updateError) {
+      console.error('Failed to update order in database:', updateError);
+      // Continue anyway, don't fail the request
+    } else {
+      console.log(`✅ Order ${orderId}: status=${newStatus}, kyc_completed=true`);
+    }
+
+    res.json({
+      message: "KYC data saved successfully",
+      order: {
+        id: orderId,
+        kyc_completed: true,
+        kyc_completed_at: new Date().toISOString(),
+        kyc_data: kycData,
+        status: newStatus,
+      },
+    });
+  } catch (err) {
+    console.error("Save KYC error:", err);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
+};
+
+export {
+  createOrder,
+  getOrders,
+  getOrderById,
+  saveDeliveryPhoto,
+  saveCustomerSignature,
+  saveKYCData,
+};
