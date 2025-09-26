@@ -39,7 +39,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
         runtimeCaching: [
           {
-            urlPattern: /^http:\/\/localhost:3000\/api\/.*/i,
+            urlPattern: /^https:\/\/whatsapp-mvp\.onrender\.com\/api\/.*/i,
             handler: "NetworkFirst",
             options: {
               cacheName: "api-cache",

@@ -11,7 +11,18 @@ import sessionService from "./services/redisSessionService.js";
 import tokenManager from "./services/tokenManager.js";
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173", // Local development
+      "http://localhost:3000", // Local development
+      "https://sujalgandhi.me", // Your domain
+      "https://www.sujalgandhi.me", // Your domain with www
+      /\.sujalgandhi\.me$/, // Any subdomain of your domain
+    ],
+    credentials: true,
+  })
+);
 // Increase body size limit for image uploads
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:3000/api";
+const API_BASE_URL = "https://whatsapp-mvp.onrender.com/api";
 
 // Create axios instance with default config
 const apiClient = axios.create({
@@ -68,13 +68,13 @@ export const productsAPI = {
 // Auto-authentication for agent
 export const ensureAuthenticated = async () => {
   const existingToken = localStorage.getItem("authToken");
-  
+
   // Check if token exists and is not expired
   if (existingToken) {
     try {
-      const payload = JSON.parse(atob(existingToken.split('.')[1]));
+      const payload = JSON.parse(atob(existingToken.split(".")[1]));
       const currentTime = Date.now() / 1000;
-      
+
       // If token is not expired (with 5 minute buffer), use it
       if (payload.exp > currentTime + 300) {
         return existingToken;
@@ -88,9 +88,9 @@ export const ensureAuthenticated = async () => {
   try {
     const response = await apiClient.post("/auth/login", {
       username: "agent",
-      password: "password"
+      password: "password",
     });
-    
+
     const { token } = response.data;
     localStorage.setItem("authToken", token);
     console.log("✅ Agent authenticated successfully");
