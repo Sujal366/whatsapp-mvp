@@ -8,6 +8,7 @@ import orderRoutes from "./routes/orders.js";
 import { createClient } from "@supabase/supabase-js";
 import supabase from "./supabaseClient.js";
 import sessionService from "./services/redisSessionService.js";
+import tokenManager from "./services/tokenManager.js";
 
 const app = express();
 app.use(cors());
@@ -18,6 +19,15 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+
+// Token status endpoint for monitoring
+app.get("/api/token-status", (req, res) => {
+  const status = tokenManager.getTokenStatus();
+  res.json({
+    ...status,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.get("/", (req, res) => res.send("Generic Orders MVP Backend Running"));
 
