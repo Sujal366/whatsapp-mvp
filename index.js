@@ -133,7 +133,7 @@ app.post("/webhook", async (req, res) => {
                 : null;
 
             // Call backend API to create order with customer information
-            const response = await fetch(`http://localhost:3000/api/orders`, {
+            const response = await fetch(`https://whatsapp-mvp.onrender.com/api/orders`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
