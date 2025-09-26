@@ -109,12 +109,12 @@ const Login: React.FC = () => {
         </form>
 
         {/* Demo Credentials */}
-        <div className="mt-6 p-3 bg-gray-50 rounded-md">
+        {/* <div className="mt-6 p-3 bg-gray-50 rounded-md">
           <p className="text-xs text-gray-600 text-center">
             Demo: username: <strong>agent</strong>, password:{" "}
             <strong>password</strong>
           </p>
-        </div>
+        </div> */}
       </div>
     </div>
   );
