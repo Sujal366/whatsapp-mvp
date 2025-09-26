@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import apiClient, { ensureAuthenticated } from "../services/api";
 
@@ -92,7 +92,7 @@ const CameraCapture: React.FC = () => {
       await ensureAuthenticated();
       
       // Save photo data to backend
-      const response = await apiClient.post(`/orders/${orderId}/photo`, {
+      await apiClient.post(`/orders/${orderId}/photo`, {
         photoData: capturedImage,
       });
 

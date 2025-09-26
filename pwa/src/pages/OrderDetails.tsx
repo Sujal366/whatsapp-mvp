@@ -70,22 +70,22 @@ const OrderDetails: React.FC = () => {
     }
   };
 
-  const getStatusDescription = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "No agent actions completed yet";
-      case "in_progress":
-        return "Agent actions in progress";
-      case "delivered":
-        return "Delivery confirmed with photo and signature";
-      case "completed":
-        return "All agent actions completed";
-      case "cancelled":
-        return "Order was cancelled";
-      default:
-        return "Status unknown";
-    }
-  };
+  // const getStatusDescription = (status: string) => {
+  //   switch (status) {
+  //     case "pending":
+  //       return "No agent actions completed yet";
+  //     case "in_progress":
+  //       return "Agent actions in progress";
+  //     case "delivered":
+  //       return "Delivery confirmed with photo and signature";
+  //     case "completed":
+  //       return "All agent actions completed";
+  //     case "cancelled":
+  //       return "Order was cancelled";
+  //     default:
+  //       return "Status unknown";
+  //   }
+  // };
 
   if (loading) {
     return (
