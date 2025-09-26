@@ -102,7 +102,8 @@ app.post("/webhook", async (req, res) => {
 
       let reply;
       if (text === "hi" || text === "hello") {
-        reply = "👋 Hey there! Welcome to our WhatsApp bot.\n Use these commands to interact with me:\n- 'products'(To see available products) \n- 'order'(To place an order)\n- 'status'(To check order status)";
+        reply =
+          "👋 Hey there! Welcome to our WhatsApp bot.\n Use these commands to interact with me:\n- 'products'(To see available products) \n- 'order'(To place an order)\n- 'status'(To check order status)";
       } else if (text === "help") {
         reply =
           "Here are some commands you can try:\n- 'products' \n- 'order'\n- 'status'";
@@ -111,7 +112,8 @@ app.post("/webhook", async (req, res) => {
         await sessionService.setSession(from, {
           state: "awaiting_order_items",
         });
-        reply = "📦 Please send your order items in this format (separated by commas): 2 apples, 1 milk";
+        reply =
+          "📦 Please send your order items in this format (separated by commas): 2 apples, 1 milk";
       } else if (
         userSession?.state === "awaiting_order_items" ||
         looksLikeOrder(text)
@@ -326,8 +328,8 @@ function parseOrderText(text) {
 const port = process.env.PORT || 3000;
 
 // Add error handling for the server
-const server = app.listen(port, () => {
-  console.log(`Webhook server listening on http://localhost:${port}`);
+const server = app.listen(port, "0.0.0.0", () => {
+  console.log(`Webhook server listening on port ${port}`);
   console.log("Server is running and ready to receive requests...");
 });
 
